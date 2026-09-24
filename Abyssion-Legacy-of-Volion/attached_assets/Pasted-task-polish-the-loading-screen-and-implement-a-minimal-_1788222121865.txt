@@ -1,0 +1,365 @@
+task: polish the loading screen and implement a minimal, backward-compatible multi-save-slot foundation.
+
+IMPORTANT:
+work ONLY on these two tasks.
+do not refactor unrelated systems.
+do not change gameplay behavior.
+do not change combat, npc interaction, quests, inventory behavior, physics, hud behavior, or credits unless a persistence change is strictly required.
+do not add unnecessary dependencies.
+
+DO NOT perform browser testing, mobile testing, or device testing.
+verification is limited to source inspection, typecheck, and production build.
+
+==================================================
+1. LOADING SCREEN POLISH
+==================================================
+
+inspect the existing LoadingScreen implementation and its relationship with the existing game phase flow before editing.
+
+goal:
+make the loading screen feel intentional and polished without making loading artificially slower.
+
+requirements:
+
+- preserve the existing loading → main menu flow.
+- preserve existing artwork and fallback behavior.
+- make loading → main menu transition visually intentional.
+- keep the layout responsive.
+- ensure loading/ready state logic is internally consistent.
+- remove genuinely obsolete loading state logic if found.
+- do NOT add an artificial delay.
+- do NOT create fake loading progress.
+- do NOT create a new asset-loading architecture.
+- do NOT add unnecessary loading steps just for visual effect.
+- do NOT modify MainMenu or gameplay flow unless required by the existing loading contract.
+
+the loading screen should be fast when the application is actually ready.
+do not deliberately make users wait.
+
+==================================================
+2. MULTI-SAVE SLOT FOUNDATION
+==================================================
+
+FIRST:
+inspect the complete existing persistence flow before editing:
+
+- saveGame
+- loadGame
+- continueGame
+- startNewGame
+- returnToMenu
+- hasSaveData
+- existing localStorage keys
+- current save data structure
+- MainMenu Continue/New Game flow
+
+do not assume the current format.
+base the implementation on the actual source.
+
+--------------------------------------------------
+SAVE ARCHITECTURE
+--------------------------------------------------
+
+replace the current single-save assumption with exactly 3 local save slots for now.
+
+each slot must contain an independent game-progress state.
+
+per-slot data must preserve the existing gameplay persistence, including:
+
+- player state
+- quests
+- completed quest ids
+- encounter defeats
+- npc memory
+- inventory/progression data already persisted by the current system
+- any other existing gameplay state that is intentionally persisted by the current save system
+
+do not remove existing persisted fields merely because they are not explicitly listed above.
+
+--------------------------------------------------
+GLOBAL VS PER-SLOT DATA
+--------------------------------------------------
+
+keep global data separate from game-progress data.
+
+settings and HUD configuration should remain global if that matches the current architecture.
+
+do NOT duplicate global settings/HUD data into every save slot unless the existing architecture requires it.
+
+the important distinction is:
+
+global configuration
+≠
+individual game progress
+
+--------------------------------------------------
+ACTIVE SLOT
+--------------------------------------------------
+
+the currently selected save slot must be explicit.
+
+requirements:
+
+- track the active slot separately from the save data itself.
+- normal save operations must always write to the active slot.
+- continue must load the selected slot.
+- returnToMenu must save the active slot.
+- starting a new game must assign the newly created game to the selected slot.
+- active-slot information must remain consistent after application reload.
+- do not rely solely on transient Zustand memory to determine the active slot.
+
+--------------------------------------------------
+SAVE SLOT DISCOVERY
+--------------------------------------------------
+
+do NOT use a manually maintained boolean as the source of truth for whether a save exists.
+
+the save-slot state itself must determine whether Continue is available.
+
+avoid repeating the previous single-save problem where:
+
+save data exists
+but
+hasSaveData says false
+
+the UI must derive slot availability from actual persisted slot data.
+
+--------------------------------------------------
+CONTINUE FLOW
+--------------------------------------------------
+
+desired flow:
+
+main menu
+    ↓
+continue
+    ↓
+save slot selection
+    ↓
+select occupied slot
+    ↓
+load that exact slot
+    ↓
+gameplay
+
+requirements:
+
+- Continue must not load an arbitrary slot.
+- occupied slots must be distinguishable from empty slots.
+- empty slots cannot accidentally load another save.
+- selecting slot 1 must load only slot 1.
+- selecting slot 2 must load only slot 2.
+- selecting slot 3 must load only slot 3.
+- if no slots contain valid saves, Continue should remain unavailable.
+
+--------------------------------------------------
+NEW GAME FLOW
+--------------------------------------------------
+
+desired flow:
+
+main menu
+    ↓
+new game
+    ↓
+save slot selection
+    ↓
+select empty slot
+    ↓
+create fresh game
+    ↓
+gameplay
+
+requirements:
+
+- New Game must create a fresh state.
+- New Game must never silently overwrite an occupied slot.
+- occupied slots must be protected.
+- if all 3 slots are occupied, do not silently replace any slot.
+- do not add automatic deletion.
+- do not add automatic replacement.
+- do not add a confirmation flow for deletion because deletion is not being implemented.
+
+--------------------------------------------------
+SAVE BEHAVIOR
+--------------------------------------------------
+
+save operations must:
+
+- write only to the active slot.
+- preserve all existing persisted gameplay fields.
+- update minimal metadata such as last saved timestamp.
+- optionally store player level if it is already available.
+- never modify other slots.
+- never reset another slot.
+- never accidentally merge two slots together.
+
+example:
+
+save(slot 1)
+→ slot 1 changes
+→ slot 2 unchanged
+→ slot 3 unchanged
+
+--------------------------------------------------
+CORRUPTED / INVALID SAVE
+--------------------------------------------------
+
+a corrupted slot must not destroy other slots.
+
+requirements:
+
+- validate persisted slot data before loading.
+- invalid slot data should fail safely.
+- Continue must not crash because one slot is malformed.
+- do not silently overwrite corrupted slots with a new game.
+- do not destroy unrelated valid slots.
+
+--------------------------------------------------
+LEGACY MIGRATION
+--------------------------------------------------
+
+the current project may contain the old single-save format.
+
+inspect the actual legacy format first.
+
+if a valid legacy save exists:
+
+- migrate it into the first available save slot.
+- preserve all existing persisted fields.
+- do not overwrite an already occupied valid slot.
+- write the migrated slot successfully before removing/retiring the legacy representation.
+- migration must be deterministic.
+- migration must be safe if interrupted or repeated.
+- if no valid legacy save exists, do nothing.
+
+do NOT simply delete the old `abyssion_save` key before migration succeeds.
+
+--------------------------------------------------
+SAVE SLOT UI
+--------------------------------------------------
+
+keep the UI intentionally minimal.
+
+each slot should communicate:
+
+- slot number
+- empty / occupied
+- minimal useful metadata
+- last saved time if available
+- player level if available
+
+use the existing Abyssion visual language.
+
+do NOT build:
+
+- accounts
+- profiles
+- cloud saves
+- databases
+- authentication
+- online synchronization
+- save sharing
+- save copying
+- save renaming
+- save deletion
+- import/export
+- encryption
+- thumbnails
+- elaborate profile management
+
+this is only a foundation for future expansion.
+
+--------------------------------------------------
+FUTURE MULTI-GAME COMPATIBILITY
+--------------------------------------------------
+
+the architecture should avoid hard-coding the assumption that Abyssion will forever be the only game in the application.
+
+however:
+
+DO NOT implement a multi-game system now.
+
+simply keep the persistence structure clean enough that another game can be introduced later without requiring the entire save architecture to be rewritten.
+
+do not create unused abstractions purely for hypothetical future systems.
+
+--------------------------------------------------
+UI / NAVIGATION
+--------------------------------------------------
+
+preserve existing:
+
+- main menu
+- back behavior
+- continue behavior
+- new game behavior
+- settings
+- credits
+
+only modify the flow where save-slot selection is required.
+
+do not redesign the entire main menu.
+
+--------------------------------------------------
+STRICT NON-GOALS
+--------------------------------------------------
+
+do NOT:
+
+- rewrite the entire store.
+- rewrite gameplay architecture.
+- change combat.
+- change npc systems.
+- change quest logic.
+- change inventory mechanics.
+- change physics.
+- add cloud/backend persistence.
+- add accounts/authentication.
+- add databases.
+- add online systems.
+- add unnecessary dependencies.
+- add delete/rename/copy save features.
+- build a full profile system.
+- create a multi-game selector now.
+- create fake loading progress.
+- add artificial loading delays.
+- perform browser testing.
+- perform mobile testing.
+- perform device testing.
+
+--------------------------------------------------
+IMPLEMENTATION DISCIPLINE
+--------------------------------------------------
+
+before editing:
+inspect the existing persistence and menu flow.
+
+while editing:
+make the smallest changes necessary.
+reuse existing types and architecture where possible.
+do not duplicate save logic across multiple components.
+keep persistence centralized.
+
+after editing:
+
+- inspect all modified code.
+- ensure no existing persisted fields were accidentally dropped.
+- ensure slot 1/2/3 are isolated.
+- ensure active-slot handling is explicit.
+- ensure legacy migration is safe.
+- run `npx tsc --noEmit`.
+- run the existing production build command.
+
+do not perform browser/mobile/device testing.
+
+final report must state:
+
+- files changed
+- loading-screen changes
+- save-slot architecture
+- legacy migration behavior
+- global vs per-slot data handling
+- verification results
+
+do not claim browser, mobile, or device behavior was tested.

@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Abyssion: Legacy of Volion"
+description = "A 3D action RPG prototype with real-time combat, enemies, quests, NPC dialogue, inventory, checkpoints, and browser-saved progression."
+version = "1.0.0"
+id = "artifacts/abyssion-legacy-of-volion"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20333
+
+[services.development]
+run = "pnpm --filter @workspace/abyssion-legacy-of-volion run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/abyssion-legacy-of-volion", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/abyssion-legacy-of-volion/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20333"
+BASE_PATH = "/"
