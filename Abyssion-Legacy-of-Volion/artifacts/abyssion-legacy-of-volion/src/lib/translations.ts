@@ -1,0 +1,236 @@
+/**
+ * Lightweight translation system for Abyssion.
+ * Use `t(key, language)` for UI text that should respond to the language setting.
+ */
+export type Lang = 'en' | 'id';
+
+const translations: Record<Lang, Record<string, string>> = {
+  en: {
+    // HUD
+    'hud.openQuests': 'Open Quests [L]',
+    'hud.heal': 'Heal',
+    'hud.inCombat': 'In Combat',
+    'hud.dodging': 'Dodging',
+    'hud.safe': 'Safe',
+    'hud.combo': 'COMBO',
+    'hud.hit': 'HIT',
+    'hud.heavy': 'HEAVY',
+    'hud.youDied': 'You Died',
+    'hud.respawning': 'Respawning...',
+    'hud.boss': 'Boss Name',
+    'hud.questReady': 'Return to Giver!',
+    // Notifications
+    'notify.combatEnded': 'Combat Ended! Recovered +5% HP & +30% Stamina',
+    'notify.checkpoint': 'Checkpoint Activated! HP & Stamina Restored',
+    'notify.respawned': 'Respawned at Checkpoint',
+    'notify.levelUp': '🎉 LEVEL UP! Reached Level {level}!',
+    'notify.questAccepted': '📜 Quest Accepted: {title}',
+    'notify.questComplete': '🏆 Quest Complete: {title}!',
+    'notify.questReadyTurnIn': '✨ Quest Ready to Turn In: {title}! Return to Giver.',
+    'notify.enemyDefeated': '{name} Defeated!',
+    'notify.goldPickup': '+{amount} Gold Coins',
+    'notify.itemPickup': 'Picked up {name} (x{amount})',
+    'notify.expGain': '+{amount} EXP',
+    'notify.noHealItems': 'No Healing Items in Inventory!',
+    'notify.healthFull': 'Health is already full!',
+    'notify.healCooldown': 'Healing Item on Cooldown ({seconds}s)',
+    'notify.usedItem': 'Used {name} (+{amount} HP)',
+    'notify.slowedBySlime': 'Slowed by Slime Slam!',
+    'notify.banditDodge': 'Bandit Dodge Roll!',
+    // Interact
+    'interact.talk': 'Press or Click [E] to talk to {name}',
+    'interact.quest': 'Press or Click [E] — {name} has a task for you',
+    'interact.turnIn': 'Press or Click [E] — {name} awaits your report',
+    'interact.shop': 'Press or Click [E] to browse the wares of {name}',
+    'interact.checkpoint': 'Press [E] or Click to Activate {name}',
+    // Dialogue
+    'dialogue.continue': 'Press [E] or Click to continue',
+    'dialogue.next': 'Next ▶',
+    'dialogue.skip': 'Skip',
+    'dialogue.close': 'Close',
+    'dialogue.acceptQuest': 'Accept Quest',
+    'dialogue.claimRewards': 'Claim Rewards!',
+    'dialogue.pageOf': 'Page {current} of {total}',
+    'dialogue.questLocked': 'I have an important request, but you should finish your current tasks first.',
+    // Settings
+    'settings.title': 'SYSTEM SETTINGS',
+    'settings.language': 'Language',
+    'settings.camera': 'Camera',
+    'settings.customizeHud': 'Customize HUD',
+    'settings.editHudLayout': 'Edit HUD Layout',
+    'settings.resetAll': 'Reset All',
+    'settings.graphics': 'Graphics',
+    'settings.sensitivity': 'Sensitivity',
+    'settings.debugMode': 'Debug Mode',
+    'settings.saveApply': 'Save & Apply',
+    'settings.mainMenu': 'Main Menu',
+    'settings.discardTitle': 'Discard Changes?',
+    'settings.discardBody': 'Your changes will be discarded.',
+    'settings.continue': 'Continue',
+    'settings.cancel': 'Cancel',
+    // Shop
+    'shop.title': "MARCUS'S FOOD SHOP",
+    'shop.notEnoughGold': 'Not enough gold!',
+    'shop.inventoryFull': 'Inventory is full!',
+    'shop.purchased': 'Purchased {amount}x {name}',
+    'shop.buyFood': 'Buy food to heal during combat',
+    // Inventory
+    'inventory.title': 'INVENTORY',
+    'inventory.empty': 'Your inventory is empty.',
+    // Main menu
+    'menu.continue': 'CONTINUE',
+    'menu.continueSub': 'SELECT A SAVE SLOT',
+    'menu.noSaveData': 'NO SAVE DATA FOUND',
+    'menu.newGame': 'NEW GAME',
+    'menu.newGameSub': 'BEGIN A NEW JOURNEY',
+    'menu.settings': 'SETTINGS',
+    'menu.settingsSub': 'SYSTEM CONFIGURATION',
+    'menu.credits': 'CREDITS',
+    'menu.creditsSub': 'DEVELOPMENT TEAM',
+    'menu.subtitle': 'Legacy of Volion',
+    'menu.description': 'The Abyss stirs beneath Volion. Take up the blade and descend into a world of shadow, steel, and forgotten legacy.',
+    // Save
+    'save.selectSlot': 'Select Save Slot',
+    'save.occupied': 'OCCUPIED',
+    'save.corrupted': 'CORRUPTED',
+    'save.empty': 'EMPTY',
+    'save.level': 'LEVEL {level}',
+    'save.locked': 'LOCKED',
+    'save.select': 'SELECT',
+    'save.active': 'ACTIVE',
+    'save.deleteTitle': 'Delete this save?',
+    'save.deleteBody': 'This action cannot be undone.',
+    'save.delete': 'Delete',
+    'save.cancel': 'Cancel',
+    'save.backToMenu': 'Back to Main Menu',
+    'save.newGameDesc': 'Choose an empty archive. Occupied records are protected from replacement.',
+    'save.continueDesc': 'Choose an occupied archive to continue. Empty and corrupted records are locked.',
+    'save.noSaves': 'No valid saves found. Return and begin a new journey.',
+    'save.allOccupied': 'All archives are occupied or corrupted. No record was replaced.',
+    // Quest
+    'quest.journal': 'Quests [L]',
+    'quest.openQuests': 'Open Quests [L]',
+  },
+  id: {
+    // HUD
+    'hud.openQuests': 'Buka Misi [L]',
+    'hud.heal': 'Sembuh',
+    'hud.inCombat': 'Dalam Pertarungan',
+    'hud.dodging': 'Menghindar',
+    'hud.safe': 'Aman',
+    'hud.combo': 'KOMBO',
+    'hud.hit': 'PUKUL',
+    'hud.heavy': 'BERAT',
+    'hud.youDied': 'Kamu Mati',
+    'hud.respawning': 'Hidup Kembali...',
+    'hud.boss': 'Nama Bos',
+    'hud.questReady': 'Kembali ke Pemberi!',
+    // Notifications
+    'notify.combatEnded': 'Pertarungan Selesai! Memulihkan +5% HP & +30% Stamina',
+    'notify.checkpoint': 'Titik Pemeriksaan Aktif! HP & Stamina Dipulihkan',
+    'notify.respawned': 'Hidup Kembali di Titik Pemeriksaan',
+    'notify.levelUp': '🎉 NAIK LEVEL! Mencapai Level {level}!',
+    'notify.questAccepted': '📜 Misi Diterima: {title}',
+    'notify.questComplete': '🏆 Misi Selesai: {title}!',
+    'notify.questReadyTurnIn': '✨ Misi Siap Diserahkan: {title}! Kembali ke Pemberi.',
+    'notify.enemyDefeated': '{name} Kalah!',
+    'notify.goldPickup': '+{amount} Koin Emas',
+    'notify.itemPickup': 'Mengambil {name} (x{amount})',
+    'notify.expGain': '+{amount} EXP',
+    'notify.noHealItems': 'Tidak Ada Item Penyembuhan di Inventaris!',
+    'notify.healthFull': 'Kesehatan sudah penuh!',
+    'notify.healCooldown': 'Item Penyembuhan dalam Cooldown ({seconds}s)',
+    'notify.usedItem': 'Menggunakan {name} (+{amount} HP)',
+    'notify.slowedBySlime': 'Diperlambat oleh Slime Slam!',
+    'notify.banditDodge': 'Bandit Menghindar!',
+    // Interact
+    'interact.talk': 'Tekan atau Klik [E] untuk berbicara dengan {name}',
+    'interact.quest': 'Tekan atau Klik [E] — {name} punya tugas untuk Anda',
+    'interact.turnIn': 'Tekan atau Klik [E] — {name} menunggu laporan Anda',
+    'interact.shop': 'Tekan atau Klik [E] untuk melihat barang dagangan {name}',
+    'interact.checkpoint': 'Tekan [E] atau Klik untuk Mengaktifkan {name}',
+    // Dialogue
+    'dialogue.continue': 'Tekan [E] atau Klik untuk melanjutkan',
+    'dialogue.next': 'Selanjutnya ▶',
+    'dialogue.skip': 'Lewati',
+    'dialogue.close': 'Tutup',
+    'dialogue.acceptQuest': 'Terima Misi',
+    'dialogue.claimRewards': 'Klaim Hadiah!',
+    'dialogue.pageOf': 'Halaman {current} dari {total}',
+    'dialogue.questLocked': 'Saya punya permintaan penting, tapi selesaikan tugas Anda terlebih dahulu.',
+    // Settings
+    'settings.title': 'PENGATURAN SISTEM',
+    'settings.language': 'Bahasa',
+    'settings.camera': 'Kamera',
+    'settings.customizeHud': 'Sesuaikan HUD',
+    'settings.editHudLayout': 'Edit Tata Letak HUD',
+    'settings.resetAll': 'Atur Ulang Semua',
+    'settings.graphics': 'Grafis',
+    'settings.sensitivity': 'Sensitivitas',
+    'settings.debugMode': 'Mode Debug',
+    'settings.saveApply': 'Simpan & Terapkan',
+    'settings.mainMenu': 'Menu Utama',
+    'settings.discardTitle': 'Buang Perubahan?',
+    'settings.discardBody': 'Perubahan Anda akan dibuang.',
+    'settings.continue': 'Lanjutkan',
+    'settings.cancel': 'Batal',
+    // Shop
+    'shop.title': 'TOKO MAKANAN MARCUS',
+    'shop.notEnoughGold': 'Gold tidak cukup!',
+    'shop.inventoryFull': 'Inventaris penuh!',
+    'shop.purchased': 'Membeli {amount}x {name}',
+    'shop.buyFood': 'Beli makanan untuk menyembuhkan saat bertarung',
+    // Inventory
+    'inventory.title': 'INVENTARIS',
+    'inventory.empty': 'Inventaris Anda kosong.',
+    // Main menu
+    'menu.continue': 'LANJUTKAN',
+    'menu.continueSub': 'PILIH SLOT SIMPAN',
+    'menu.noSaveData': 'TIDAK ADA DATA SIMPANAN',
+    'menu.newGame': 'GAME BARU',
+    'menu.newGameSub': 'MULAI PERJALANAN BARU',
+    'menu.settings': 'PENGATURAN',
+    'menu.settingsSub': 'KONFIGURASI SISTEM',
+    'menu.credits': 'KREDIT',
+    'menu.creditsSub': 'TIM PENGEMBANG',
+    'menu.subtitle': 'Legacy of Volion',
+    'menu.description': 'Abyss bergerak di bawah Volion. Ambil pedang dan turun ke dunia bayangan, baja, dan warisan yang terlupakan.',
+    // Save
+    'save.selectSlot': 'Pilih Slot Simpan',
+    'save.occupied': 'TERISI',
+    'save.corrupted': 'RUSAK',
+    'save.empty': 'KOSONG',
+    'save.level': 'LEVEL {level}',
+    'save.locked': 'TERKUNCI',
+    'save.select': 'PILIH',
+    'save.active': 'AKTIF',
+    'save.deleteTitle': 'Hapus simpanan ini?',
+    'save.deleteBody': 'Tindakan ini tidak dapat dibatalkan.',
+    'save.delete': 'Hapus',
+    'save.cancel': 'Batal',
+    'save.backToMenu': 'Kembali ke Menu Utama',
+    'save.newGameDesc': 'Pilih arsip kosong. Rekaman yang terisi dilindungi dari penggantian.',
+    'save.continueDesc': 'Pilih arsip yang terisi untuk melanjutkan. Arsip kosong dan rusak terkunci.',
+    'save.noSaves': 'Tidak ada simpanan yang valid. Kembali dan mulai perjalanan baru.',
+    'save.allOccupied': 'Semua arsip terisi atau rusak. Tidak ada rekaman yang diganti.',
+    // Quest
+    'quest.journal': 'Misi [L]',
+    'quest.openQuests': 'Buka Misi [L]',
+  },
+};
+
+/**
+ * Simple translation helper.
+ * Usage: t('hud.heal', lang) → "Heal" or "Sembuh"
+ * With interpolation: t('notify.levelUp', lang, { level: 5 }) → "🎉 LEVEL UP! Reached Level 5!"
+ */
+export function t(key: string, lang: Lang, values?: Record<string, string | number>): string {
+  const dict = translations[lang] ?? translations.en;
+  let text = dict[key] ?? translations.en[key] ?? key;
+  if (values) {
+    for (const [k, v] of Object.entries(values)) {
+      text = text.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));
+    }
+  }
+  return text;
+}

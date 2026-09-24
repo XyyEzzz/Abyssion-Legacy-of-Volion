@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+/* Strict 16:9 game presentation (M1W2D5): the browser viewport hosts a
+   letterboxed 16:9 game frame (see Game.tsx). Prevent document-level
+   scrolling/overscroll so the game behaves like a game viewport, not a
+   responsive web page. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
