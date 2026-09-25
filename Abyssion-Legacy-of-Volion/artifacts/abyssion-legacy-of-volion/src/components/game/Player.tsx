@@ -14,12 +14,79 @@ import { M1887_CONFIG, M1887_SKILLS, M1887_SKILL_COOLDOWNS, type GunSkill, RESON
 import { applyStun, applyBleeding } from './enemies/types';
 import { weaponCategoryOf } from '@/lib/items';
 import { CROSSBOW_CONFIG, CROSSBOW_SKILLS, CROSSBOW_SKILL_COOLDOWNS, TRIPLEX_LACTUS, MIMIQUE, CROSSBOW_STREAK, crossbowStreakMultiplier, type CrossbowSkill } from '@/lib/crossbowContent';
-import { spawnArrow, updateArrows, resetArrows, getActiveArrows, type ArrowInstance } from '@/lib/arrowRunner';
+import { spawnArrow, updateArrows, resetArrows, getActiveArrows, type ArrowInstance, type ArrowHitEvent } from '@/lib/arrowRunner';
 import type { SwordSkill } from '@/lib/swordSkills';
-import { spawnSpell, updateSpells, resetSpells, getActiveSpells, spawnSlashBurst, tickSlashFx, resetSlashFx, getActiveSlashFx, type SpellInstance, type SwordSlashFx } from '@/lib/spellRunner';
+import { spawnSpell, updateSpells, resetSpells, getActiveSpells, spawnSlashBurst, tickSlashFx, resetSlashFx, getActiveSlashFx, type SpellInstance, type SwordSlashFx, type SpellCallbacks } from '@/lib/spellRunner';
 import { FATAMORGANA, DOZENS_OF_SLASHES, SWORD_SKILL_COOLDOWNS, type SwordSkillId } from '@/lib/swordSkills';
 
 const SPEED = C.walkSpeed;
+
+/** M1W3D6 #1 E1: locomotion state blend window (seconds). The idle <-> walk
+ *  ease runs for exactly this long; attack, dodge and airborne never blend. */
+const LOCO_BLEND_S = 0.1;
+
+/** M1W3D6 #1 E1b: per-weapon impact feedback — hitstop duration (ms), camera
+ *  shake base intensity, and the weapon's element colour. There is no element
+ *  palette anywhere in the codebase (audit A1.5 = none), so the trail colours
+ *  are these fixed hex values. */
+type ImpactWeapon = 'sword' | 'dagger' | 'm1887' | 'crossbow' | 'staff' | 'core';
+const IMPACT: Record<ImpactWeapon, { hitStopMs: number; shake: number; color: string }> = {
+  sword:    { hitStopMs: 80,  shake: 0.15, color: '#8B5A2B' }, // earth
+  dagger:   { hitStopMs: 50,  shake: 0.10, color: '#3FA9F5' }, // water
+  m1887:    { hitStopMs: 120, shake: 0.35, color: '#FF6A1F' }, // fire
+  crossbow: { hitStopMs: 60,  shake: 0.15, color: '#8B5A2B' }, // earth
+  staff:    { hitStopMs: 100, shake: 0.20, color: '#3FA9F5' }, // water
+  core:     { hitStopMs: 80,  shake: 0.18, color: '#4B2A7A' }, // shadow
+};
+
+/** Resolve the impact row for a held weapon id (null = no row). */
+function impactWeaponFor(itemId: string | null): ImpactWeapon | null {
+  switch (itemId) {
+    case 'iron_sword':
+    case 'wooden_sword':
+      return 'sword';
+    case 'dual_dagger':
+      return 'dagger';
+    case 'm1887':
+      return 'm1887';
+    case 'crossbow':
+      return 'crossbow';
+    case 'water_staff':
+      return 'staff';
+    case 'resonance_core':
+      return 'core';
+    default:
+      return null;
+  }
+}
+
+/** Shake scale from the damage fraction of the weapon's heaviest single hit,
+ *  clamped to [0.5, 1] so a light hit still reads as an impact. */
+function damageScaleOf(damage: number, maxDamage: number): number {
+  if (!(maxDamage > 0)) return 1;
+  return Math.max(0.5, Math.min(1, damage / maxDamage));
+}
+
+/** E1b: heaviest single hit across the staff's skill table — the denominator
+ *  for the water element's damage-scaled shake. Constant, computed once. */
+const STAFF_MAX_HIT_DAMAGE = WATER_STAFF_SKILLS.reduce((m, s) => Math.max(m, s.damage), 0);
+
+/** E1b: the crossbow's heaviest basic arrow — base damage at the maximum hit
+ *  streak (CROSSBOW_STREAK.max is a constant in crossbowContent). */
+const CROSSBOW_MAX_HIT_DAMAGE = CROSSBOW_CONFIG.damage * crossbowStreakMultiplier(CROSSBOW_STREAK.max);
+
+/** E1b: the water staff's impact callback — one shared instance wired into every
+ *  updateSpells call site so the per-frame spell tick allocates nothing.
+ *  spellRunner stays the authority on what counts as a hit and on the damage
+ *  the hit carried; this only maps the event onto the staff's IMPACT row. */
+const staffSpellCallbacks: SpellCallbacks = {
+  onHit: (ev) => {
+    const hitSt = useGameStore.getState();
+    hitSt.triggerHitStop(IMPACT.staff.hitStopMs);
+    hitSt.triggerCameraShake(IMPACT.staff.shake * damageScaleOf(ev.damage, STAFF_MAX_HIT_DAMAGE));
+  },
+};
+
 const SPRINT_MULT = C.sprintMultiplier;
 const JUMP_FORCE = C.jumpForce;
 const DOUBLE_JUMP_FORCE = C.doubleJumpForce;
@@ -158,6 +225,18 @@ export default function Player() {
   const landingDipRef = useRef(0);            // current camera dip offset (visual only)
   const squashScaleRef = useRef(1);           // body Y-scale for landing squash
   const headBobPhaseRef = useRef(0);          // accumulating phase for head bob
+  // M1W3D6 #1 E1 locomotion blend state — scalars only, created once (no
+  // per-frame allocation). `state` is the locomotion state rendered last frame
+  // (null = airborne); `t` >= the blend window means "settled, no blend";
+  // `from*` is the pose to ease from on a transition.
+  const locoBlendRef = useRef<{
+    state: 'idle' | 'walk' | null;
+    t: number;
+    fromL: number;
+    fromR: number;
+    fromLA: number;
+    fromRA: number;
+  }>({ state: null, t: LOCO_BLEND_S, fromL: 0, fromR: 0, fromLA: 0, fromRA: 0 });
   const prevFootstepDistRef = useRef(0);     // distance accumulator for footstep cadence
   const currentFovRef = useRef<number>(C.baseFov);    // smoothed FOV for sprint transition
 
@@ -299,10 +378,33 @@ export default function Player() {
         hitAny = true;
       }
     }
-    useGameStore.getState().triggerCameraShake(CC.shakeHeavy);
+    // E1b: impact feedback only on a confirmed hit. The shotgun's 8 pellets
+    // resolve inside this one call, so this is inherently ONE hitstop for the
+    // frame. Shake is scaled by the damage fraction and the existing muzzle
+    // flash becomes the M1887's fire-coloured bloom (0.08s, in place).
+    if (hitAny) {
+      const hitSt = useGameStore.getState();
+      hitSt.triggerHitStop(IMPACT.m1887.hitStopMs);
+      hitSt.triggerCameraShake(IMPACT.m1887.shake * damageScaleOf(dmg, M1887_CONFIG.damagePerPellet * M1887_CONFIG.pellets));
+      if (gunMuzzleFlashRef.current) {
+        const mf = gunMuzzleFlashRef.current.material as THREE.MeshBasicMaterial;
+        mf.color.set(IMPACT.m1887.color);
+      }
+    }
     // Muzzle flash: 0.08s window, originates at the barrel tip (the flash
     // mesh is parented to the gun barrel group facing +Z firing direction).
     gunMuzzleFlashTimerRef.current = 0.08;
+  };
+
+  /** E1b PHASE 4: point the existing melee trail at the held weapon's element
+   *  colour. Called only when a swing starts — never per frame — so it adds no
+   *  per-frame work and reuses the existing material. */
+  const applyTrailColor = () => {
+    const st = useGameStore.getState();
+    const iw = impactWeaponFor(st.hotbar.slots[st.hotbar.selectedSlot]);
+    if (!iw || !trailMeshRef.current) return;
+    const mat = trailMeshRef.current.material as THREE.MeshBasicMaterial;
+    mat.color.set(IMPACT[iw].color);
   };
 
   useFrame((state, delta) => {
@@ -350,6 +452,13 @@ export default function Player() {
       mimiqueRef.current.elapsed = 0;
       crossbowStreakRef.current = 0;
       crossbowStreakTimerRef.current = 0;
+      // Locomotion blend is transient too: a respawn must snap to the state
+      // pose rather than ease out of the pose the player died in.
+      locoBlendRef.current.state = null;
+      locoBlendRef.current.t = LOCO_BLEND_S;
+      // E1b impact transients die with the player too.
+      hitStopTimerRef.current = 0;
+      localShakeRef.current = 0;
       if (playerMeshRef.current) { playerMeshRef.current.rotation.x = 0; playerMeshRef.current.position.y = 0; }
       if (swordGroupRef.current) swordGroupRef.current.rotation.set(0, 0, 0);
     }
@@ -438,7 +547,6 @@ export default function Player() {
     // spells finish their finite travel instead of freezing mid-air with
     // stale references. New casts stay blocked: the cast block below is
     // unreachable while this early-return is active.
-    updateSpells(delta);
 
     // Mage spell visuals: keep pooled meshes in sync with the spell pool.
     const seen = spellMeshRefs.current;
@@ -873,7 +981,7 @@ export default function Player() {
 
     // Tick spell simulation every frame (regardless of blocking later in the
     // frame — spells were spawned only while gameplay input was live).
-    updateSpells(delta);
+    updateSpells(delta, staffSpellCallbacks);
     tickSlashFx(delta);
     if (castAnimRef.current > 0) {
       castAnimRef.current = Math.max(0, castAnimRef.current - delta * 4);
@@ -1042,7 +1150,14 @@ export default function Player() {
     }
 
     // ── M1887 GUN SKILLS (P7.1) ──────────────────────────────────────
-    const gunEquipped = weaponCategoryOf(selectedWeapon) === 'gun';
+    // M1W3D6 #1: this block is the M1887's — its fire gate, ammo ref (seeded
+    // from M1887_CONFIG), reload timer, muzzle flash and GUN_SKILL_EDGES are
+    // all M1887 state. `weaponCategoryOf` also returns 'gun' for the crossbow
+    // (items.ts:28-30), which made one attack tap drive both the M1887 and
+    // crossbow gates in the same frame. Gate the block on the M1887 itself.
+    // Gameplay category checks elsewhere (melee suppression at the melee block,
+    // `isRangedCategory`) deliberately still treat both guns the same.
+    const gunEquipped = selectedWeapon === 'm1887';
     const gunCooldowns = gunSkillCooldownRefs.current;
     for (const id of Object.keys(gunCooldowns)) {
       gunCooldowns[id] = Math.max(0, gunCooldowns[id] - effectiveDelta);
@@ -1052,6 +1167,16 @@ export default function Player() {
       // Basic fire: attack input fires one shell at rate-of-fire. Empty gun
       // auto-reloads (readable timing); skills require pre-loaded shells.
       gunFireTimerRef.current = Math.max(0, gunFireTimerRef.current - effectiveDelta);
+      // M1W3D6 #1 WS1: one click fires one shell. The touch/mouse tap path
+      // leaves the store's attack level true until the next press, so the hold
+      // gate below would read a single tap as a held trigger and dump the
+      // 2-shell magazine. Consume the click edge here — KeyJ is a separate
+      // input source, so keyboard hold-to-fire is unaffected.
+      // prevAttackInputRef still holds the previous gameplay frame's attack
+      // level (the melee block writes it later in the frame), exactly as the
+      // crossbow click-latch fix relies on.
+      const gunClick = attackInput && !prevAttackInputRef.current;
+      if (gunClick && storeAttack) useGameStore.getState().setInputs({ attack: false });
       // Muzzle flash visibility: exactly the post-shot window, then hidden.
       if (gunMuzzleFlashTimerRef.current > 0) {
         gunMuzzleFlashTimerRef.current -= effectiveDelta;
@@ -1220,7 +1345,9 @@ export default function Player() {
             // Hit-confirmed feedback: shake only when damage was actually
             // accepted by the enemy damage funnel (not for empty AoEs).
             if (confirmedHits > 0) {
-              coreSt.triggerCameraShake(CC.shakeLight);
+              // E1b: per-weapon hitstop + shake scaled by the empowered damage.
+              coreSt.triggerHitStop(IMPACT.core.hitStopMs);
+              coreSt.triggerCameraShake(IMPACT.core.shake * damageScaleOf(skill.damage! * boost, skill.damage!));
               coreSt.addHitSpark(translation.x, translation.y + 1.0, translation.z, '#a78bfa');
             }
             coreSt.grantItemExpById('resonance_core', 10);
@@ -1284,7 +1411,18 @@ export default function Player() {
       crossbowStreakRef.current = Math.min(CROSSBOW_STREAK.max, crossbowStreakRef.current + 1);
       crossbowStreakTimerRef.current = CROSSBOW_STREAK.resetSeconds;
     };
-    const crossbowArrowCb = { onHit: bumpCrossbowStreak, onMiss: () => { crossbowStreakRef.current = 0; } };
+    // E1b: arrow hits go through the same impact path. The arrow hit event now
+    // carries the exact damage the hit was accepted with, so the crossbow's
+    // shake is scaled by its damage fraction against its heaviest basic arrow.
+    const crossbowArrowCb = {
+      onHit: (ev: ArrowHitEvent) => {
+        bumpCrossbowStreak();
+        const hitSt = useGameStore.getState();
+        hitSt.triggerHitStop(IMPACT.crossbow.hitStopMs);
+        hitSt.triggerCameraShake(IMPACT.crossbow.shake * damageScaleOf(ev.damage, CROSSBOW_MAX_HIT_DAMAGE));
+      },
+      onMiss: () => { crossbowStreakRef.current = 0; },
+    };
     updateArrows(delta, crossbowArrowCb);
 
     // Fire one arrow along a degree offset from the authoritative facing (XZ).
@@ -1449,6 +1587,7 @@ export default function Player() {
           hitEnemiesThisSwingRef.current.clear();
           attackCamPushRef.current = CC.attackCameraPush;
           trailAlphaRef.current = 1;
+          applyTrailColor();
           combatAudio.swing({ comboStage: comboStage as 1 | 2 | 3 });
           if (comboStage === 3) {
             useGameStore.getState().triggerCameraShake(CC.shakeLight);
@@ -1470,6 +1609,7 @@ export default function Player() {
           hitEnemiesThisSwingRef.current.clear();
           attackCamPushRef.current = CC.attackCameraPush;
           trailAlphaRef.current = 1;
+          applyTrailColor();
           combatAudio.swing({ comboStage: comboStage as 1 | 2 | 3 });
           if (comboStage === 3) {
             useGameStore.getState().triggerCameraShake(CC.shakeLight);
@@ -1531,6 +1671,8 @@ export default function Player() {
         if (curseActive) damage = Math.round(damage * CURSE_OF_HELL.damageMultiplier);
 
         // Query enemy targets
+        // E1b: the held melee weapon's impact row, resolved once for the swing.
+        const meleeImpact: ImpactWeapon = impactWeaponFor(selectedWeapon) ?? 'sword';
         enemyTargets.forEach((target) => {
           if (hitEnemiesThisSwingRef.current.has(target.id)) return;
           const enemyPos = target.getPosition();
@@ -1554,8 +1696,14 @@ export default function Player() {
                   if (hitItem) st.grantItemExpById(hitItem, 6);
                 }
                 useGameStore.getState().confirmComboHit();
-                useGameStore.getState().triggerHitStop(stage === 3 ? CC.hitStopMsHeavy : CC.hitStopMs);
-                useGameStore.getState().triggerCameraShake(stage === 3 ? CC.shakeHeavy : CC.shakeLight);
+                // E1b: per-weapon hitstop and camera shake, shake scaled by the
+                // damage fraction against the heaviest stage's base damage (45).
+                // Every enemy hit by this swing carries the same `damage`, so the
+                // max-per-frame coalescing rule is satisfied without an
+                // accumulator, and triggerHitStop assigns (never accumulates).
+                const impact = IMPACT[meleeImpact];
+                useGameStore.getState().triggerHitStop(impact.hitStopMs);
+                useGameStore.getState().triggerCameraShake(impact.shake * damageScaleOf(damage, 45));
                 useGameStore.getState().addHitSpark(enemyPos.x, enemyPos.y + 1.2, enemyPos.z, stage === 3 ? CC.hitSparkColorHeavy : CC.hitSparkColorNormal);
                 // Directional slash particles — burst outward along attack direction
                 useGameStore.getState().addSlashParticles(enemyPos.x, enemyPos.y + 1.0, enemyPos.z, _v3.x, _v3.z, stage === 3 ? CC.hitSparkColorHeavy : CC.slashParticleColor);
@@ -1982,7 +2130,12 @@ export default function Player() {
         } else if (moving) {
           // WALK: legs alternate; arms swing in opposition -- deterministic
           // cycle from the existing head-bob phase accumulator.
-          const swing = Math.sin(headBobPhaseRef.current);
+          // E1: stride amplitude follows actual horizontal speed (idle -> full
+          // stride), so a partial stick deflection or a slow start is not a
+          // full-strength stride. At walk speed and above the scale is 1, so
+          // the existing full-speed walk/sprint pose is unchanged.
+          const speedScale = Math.min(1, horizontalSpeed / SPEED);
+          const swing = Math.sin(headBobPhaseRef.current) * speedScale;
           leftLegGroupRef.current.rotation.x = swing * 0.55;
           rightLegGroupRef.current.rotation.x = -swing * 0.55;
           if (armFree) {
@@ -1999,6 +2152,44 @@ export default function Player() {
             rightArmGroupRef.current.rotation.x = -micro;
           }
         }
+        // E1 LOCOMOTION BLEND (M1W3D6 #1): exactly 0.1 s ease between the
+        // locomotion states (idle <-> walk). The chain above still writes the
+        // hard target and remains the ONLY writer of these four rotations;
+        // this only smooths the approach to that target on the frames after a
+        // state change. Nothing here can blend into or out of attack, dodge or
+        // airborne: a non-locomotion state snaps, and the arms are blended
+        // only on frames the locomotion chain owns them (armFree), so an
+        // attack pose can never become a blend source or a blend target.
+        const loco: 'idle' | 'walk' | null = !grounded ? null : (moving ? 'walk' : 'idle');
+        const lb = locoBlendRef.current;
+        if (loco !== lb.state) {
+          // idle <-> walk eases; every other change snaps, by starting settled
+          // (a re-entry from airborne/dodge must not ease out of that pose).
+          const bothLoco = loco !== null && lb.state !== null;
+          lb.state = loco;
+          lb.t = bothLoco ? 0 : LOCO_BLEND_S;
+        }
+        if (loco !== null && lb.t < LOCO_BLEND_S) {
+          lb.t = Math.min(LOCO_BLEND_S, lb.t + delta);
+          const k = lb.t / LOCO_BLEND_S;
+          leftLegGroupRef.current.rotation.x = lb.fromL + (leftLegGroupRef.current.rotation.x - lb.fromL) * k;
+          rightLegGroupRef.current.rotation.x = lb.fromR + (rightLegGroupRef.current.rotation.x - lb.fromR) * k;
+          if (armFree) {
+            leftArmGroupRef.current.rotation.x = lb.fromLA + (leftArmGroupRef.current.rotation.x - lb.fromLA) * k;
+            rightArmGroupRef.current.rotation.x = lb.fromRA + (rightArmGroupRef.current.rotation.x - lb.fromRA) * k;
+          }
+        } else if (loco !== null) {
+          // Settled: this frame's pose becomes the next transition's source.
+          // (Only locomotion frames are remembered, so an airborne or dodge
+          // pose can never be eased out of later.)
+          lb.fromL = leftLegGroupRef.current.rotation.x;
+          lb.fromR = rightLegGroupRef.current.rotation.x;
+          if (armFree) {
+            lb.fromLA = leftArmGroupRef.current.rotation.x;
+            lb.fromRA = rightArmGroupRef.current.rotation.x;
+          }
+        }
+
         // HIT/RECOIL: short backward lean layered on the breathing tilt --
         // only while the recoil impulse decays.
         torsoGroupRef.current.rotation.x = breathe - hitRecoilRef.current * 0.25;

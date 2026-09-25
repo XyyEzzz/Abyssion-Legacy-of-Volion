@@ -64,11 +64,27 @@ export function getActiveSpells(): readonly SpellInstance[] {
 /** Scratch vector — reused by castSpells; never retained. */
 const _tmp = new THREE.Vector3();
 
+/** E1b: payload of a confirmed spell hit. `damage` is the exact value handed to
+ *  the authoritative `takeDamage` funnel on the frame the hit was accepted. */
+export interface SpellHitEvent {
+  x: number;
+  y: number;
+  z: number;
+  damage: number;
+}
+
+/** E1b: optional hit notification for callers driving impact feedback. Purely
+ *  additive — a caller that passes nothing behaves exactly as before. */
+export interface SpellCallbacks {
+  /** Called once per confirmed spell hit (post-damage-acceptance). */
+  onHit?: (hit: SpellHitEvent) => void;
+}
+
 /**
  * Tick all active spells. `origin`/`facing` are only read.
  * Returns nothing; mutates pooled instances only.
  */
-export function updateSpells(delta: number): void {
+export function updateSpells(delta: number, cb?: SpellCallbacks): void {
   if (delta <= 0 || !Number.isFinite(delta)) return;
   for (const sp of pool) {
     if (!sp.active) continue;
@@ -98,7 +114,13 @@ export function updateSpells(delta: number): void {
       if (along >= -step && along <= hitRadius + step && perp <= hitRadius) {
         sp.hitIds.add(target.id);
         // Combo stage 1 → standard knockback profile through the funnel.
-        target.takeDamage(sp.skill.damage, sp.pos, 1);
+        const accepted = target.takeDamage(sp.skill.damage, sp.pos, 1);
+        // E1b: surface the confirmed hit at the same site with the same damage
+        // value — no second hit path, no second damage funnel. Rejected
+        // contacts (target i-frames) stay silent, exactly like arrowRunner.
+        if (accepted && cb?.onHit) {
+          cb.onHit({ x: sp.pos.x, y: sp.pos.y, z: sp.pos.z, damage: sp.skill.damage });
+        }
         // Projectiles stop on first impact; waves sweep through.
         if (sp.skill.kind === 'projectile') {
           sp.life = 0;

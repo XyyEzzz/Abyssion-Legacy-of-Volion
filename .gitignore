@@ -1,0 +1,9 @@
+# Large untracked trees excluded from the v.M2 pre-investor freeze (M1W4 R1).
+
+# 52 MB C++/SDL/Rust prototype - not part of the deliverable.
+native/
+
+# Pre-flatten .git backup. The directory on disk is named ".git.bak-flatten";
+# the ".git-bak-flatten" spelling is retained as well so both forms stay ignored.
+.git-bak-flatten/
+.git.bak-flatten/

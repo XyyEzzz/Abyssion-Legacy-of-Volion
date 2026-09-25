@@ -9,7 +9,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Heart, Crosshair, Skull, Swords, Shield, Backpack, Settings, Sword } from 'lucide-react';
 import QuestTrackerHUD from './QuestTrackerHUD';
 import Minimap from './Minimap';
-import { SkillBar } from './UI';
+import { SkillBar, Hotbar, MobileSkillButtons } from './UI';
 import ExpandedMap from './ExpandedMap';
 
 // ── Narrow selector helpers ─────────────────────────────────────
@@ -454,8 +454,13 @@ function DraggableHudElement({ id, config, children, fullscreen, editable, onSel
   const scale = config.size / 100;
   const opacity = config.opacity / 100;
 
+  // M1W3D6 #1 WS2: the fullscreen variant (DeathOverlay) must give its child a
+  // definite box. With an empty baseStyle the child's `absolute inset-0`
+  // resolved against a 0x0 wrapper, so the death overlay rendered invisibly.
+  // `inset: 0` makes the wrapper cover the viewport, which is exactly what the
+  // child's own `absolute inset-0` then inherits.
   const baseStyle: React.CSSProperties = fullscreen
-    ? {}
+    ? { inset: 0 }
     : {
         left: `${pos.x * 100}%`,
         top: `${pos.y * 100}%`,
@@ -683,6 +688,10 @@ export const HudElementContent: Record<HudElementId, () => React.ReactElement | 
   // so the in-game content map only needs the key for type completeness.
   topCenterControls: () => null,
   skillBar: () => null,
+  // The mobile skill stack and the desktop hotbar are rendered by UI.tsx (they
+  // need the gameplay pointer handlers), so gameplay needs no content renderer.
+  mobileSkillButtons: () => null,
+  desktopHotbar: () => null,
 };
 
 // ── Editor-specific content renderers ──────────────────────────
@@ -794,6 +803,10 @@ export const EditorHudElementContent: Record<HudElementId, () => React.ReactElem
   settingsBtn: EditorSettingsBtnContent,
   topCenterControls: () => <TopCenterControls preview />,
   skillBar: () => <SkillBar preview />,
+  // Same components as gameplay, only the `preview` prop differs — so the
+  // editor canvas is WYSIWYG for both elements.
+  mobileSkillButtons: () => <MobileSkillButtons preview />,
+  desktopHotbar: () => <Hotbar preview />,
   // Real minimap (same component as gameplay). No `preview` prop exists on
   // Minimap. `onOpenExpanded` is intentionally omitted: the minimap only
   // enables its own pointer events (and stops propagation) when that prop is

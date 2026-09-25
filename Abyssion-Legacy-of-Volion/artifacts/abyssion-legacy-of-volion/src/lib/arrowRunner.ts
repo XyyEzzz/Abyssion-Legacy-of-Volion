@@ -60,6 +60,9 @@ export interface ArrowHitEvent {
   x: number;
   y: number;
   z: number;
+  /** E1b: the exact damage value handed to the enemy's authoritative
+   *  `takeDamage` funnel on the frame the hit was accepted. */
+  damage: number;
 }
 
 export interface ArrowCallbacks {
@@ -130,7 +133,7 @@ export function updateArrows(delta: number, cb?: ArrowCallbacks): void {
         const dmg = a.baseDamage + a.traveled * a.damagePerMetre;
         const accepted = target.takeDamage(dmg, a.pos, 1);
         if (accepted) {
-          if (cb?.onHit) cb.onHit({ x: a.pos.x, y: a.pos.y, z: a.pos.z });
+          if (cb?.onHit) cb.onHit({ x: a.pos.x, y: a.pos.y, z: a.pos.z, damage: dmg });
         } else if (cb?.onMiss) {
           // Contact rejected (target i-frames): the projectile is consumed
           // without landing damage, so it resolves through the same onMiss
