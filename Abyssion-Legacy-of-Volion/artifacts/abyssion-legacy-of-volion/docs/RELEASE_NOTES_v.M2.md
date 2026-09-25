@@ -82,6 +82,6 @@ frozen at tag `v.M2` contains, and exactly what it does not.
 - Builds: yes
 - Static validation: PASS
 - Runtime verification: not performed
-- Commit: 76bf2b65dc39f7317424ee5fbd3d3e35a288b3c0
-- Tag: v.M2 -> 76bf2b65dc39f7317424ee5fbd3d3e35a288b3c0
-          (matches origin/main HEAD)
+- Frozen at tag: v.M2
+  (the tag itself records the exact commit it points
+   to; consult the tag metadata)
