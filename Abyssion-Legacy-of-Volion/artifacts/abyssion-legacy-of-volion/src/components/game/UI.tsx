@@ -206,6 +206,111 @@ export function SkillBar({ preview = false }: { preview?: boolean } = {}) {
   );
 }
 
+/** Actions the mobile weapon skill buttons can raise. Subset of the store's
+ *  button actions — the stack only ever drives skill1–skill5. */
+type MobileSkillAction = 'skill1' | 'skill2' | 'skill3' | 'skill4' | 'skill5';
+
+interface MobileSkillButtonDef {
+  action: MobileSkillAction;
+  label: string;
+  ring: string;
+  glow: string;
+}
+
+/** Build one button appearance from its base rgb triplet. */
+const skillBtn = (action: MobileSkillAction, label: string, rgb: string): MobileSkillButtonDef => ({
+  action,
+  label,
+  ring: `rgba(${rgb},0.5)`,
+  glow: `rgba(${rgb},0.25)`,
+});
+
+/** Mobile weapon skill stack (M1W3D6 #1 WS3) — the whole per-weapon button
+ *  column, registered as the single customizable HUD element
+ *  `mobileSkillButtons`.
+ *
+ *  Geometry: a fixed 56x320 box with its buttons bottom-aligned. That keeps the
+ *  stack's bottom edge at the same place for a 2-button (sword / dagger / gun)
+ *  and a 5-button (Core) set, so one hudLayout position reproduces the previous
+ *  hardcoded `right: 16px; bottom: calc(safe-area-inset-bottom + 150px)`
+ *  placement for every weapon — and it keeps the Custom HUD editor canvas
+ *  WYSIWYG, because the editor renders this same component with `preview`.
+ *
+ *  The box itself is pointer-events-none and each button re-enables pointer
+ *  events, so the gameplay input region stays exactly the buttons (not the
+ *  320px column). */
+export function MobileSkillButtons({ preview = false, onDown, onUp }: {
+  preview?: boolean;
+  onDown?: (action: MobileSkillAction, e: React.PointerEvent) => void;
+  onUp?: (action: MobileSkillAction, e: React.PointerEvent) => void;
+}) {
+  const hotbar = useGameStore((s) => s.hotbar);
+  const archetype = useGameStore((s) => s.player.archetype);
+  const selected = hotbar.slots[hotbar.selectedSlot];
+  const cat = weaponCategoryOf(selected);
+
+  // Same authoritative hotbar + archetype derivation the combat logic uses, so
+  // the buttons can never disagree with the equipped weapon.
+  let buttons: MobileSkillButtonDef[] = [];
+  if (cat === 'sword' && archetype === 'fighter') {
+    buttons = [skillBtn('skill1', 'Z', '250,204,21'), skillBtn('skill2', 'X', '245,158,11')];
+  } else if (cat === 'dagger') {
+    buttons = [skillBtn('skill1', 'Z', '251,191,36'), skillBtn('skill2', 'X', '217,119,6')];
+  } else if (cat === 'gun') {
+    buttons = [skillBtn('skill1', 'Z', '248,113,113'), skillBtn('skill2', 'X', '251,146,60')];
+  } else if (cat === 'core') {
+    buttons = [
+      skillBtn('skill1', 'Z', '167,139,250'),
+      skillBtn('skill2', 'X', '139,92,246'),
+      skillBtn('skill3', 'C', '124,58,237'),
+      skillBtn('skill4', 'V', '192,132,252'),
+      skillBtn('skill5', 'F', '216,180,254'),
+    ];
+  } else if (cat === 'staff' && archetype === 'mage') {
+    buttons = [
+      skillBtn('skill1', 'Z', '56,189,248'),
+      skillBtn('skill2', 'X', '34,211,238'),
+      skillBtn('skill3', 'C', '103,232,249'),
+    ];
+  }
+
+  // Editor preview: with no weapon equipped nothing would render, so a
+  // representative two-button stack keeps the element visible and selectable in
+  // the Custom HUD editor canvas.
+  if (preview && buttons.length === 0) {
+    buttons = [skillBtn('skill1', 'Z', '248,113,113'), skillBtn('skill2', 'X', '251,146,60')];
+  }
+  if (buttons.length === 0) return null;
+
+  return (
+    <div
+      style={{
+        width: 56,
+        height: 320,
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'flex-end',
+        alignItems: 'center',
+        gap: 10,
+        pointerEvents: 'none',
+      }}
+    >
+      {buttons.map(({ action, label, ring, glow }) => (
+        <button
+          key={action}
+          onPointerDown={onDown ? (e) => onDown(action, e) : undefined}
+          onPointerUp={onUp ? (e) => onUp(action, e) : undefined}
+          onPointerCancel={onUp ? (e) => onUp(action, e) : undefined}
+          className="w-14 h-14 rounded-full flex items-center justify-center text-white backdrop-blur-sm active:bg-white/20 touch-none select-none"
+          style={{ background: 'rgba(8,8,12,0.8)', border: `2px solid ${ring}`, boxShadow: `0 0 10px ${glow}`, pointerEvents: 'auto' }}
+        >
+          <span className="text-base font-black pointer-events-none" style={{ color: ring }}>{label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function UI() {
   // Narrow selectors — subscribing to the whole store re-renders UI on every
   // gameplay state write (positions, damage numbers, notifications), a major
@@ -777,111 +882,30 @@ export default function UI() {
           input: tap = attack, drag = camera look. Higher-priority UI (modals,
           expanded map, HUD editor, skill buttons) consumes touches first. */}
 
-      {/* Mage skill buttons (mobile): three Water Staff skills Z/X/C.
-          Desktop uses the same keys. Rendered ONLY while the Water Staff is
-          the equipped weapon — the same hotbar source of truth the combat
-          logic uses — so weapon visuals, gameplay and UI always agree. */}
-      {isMobile && swordEquipped && (
-        <div className="absolute pointer-events-auto z-30" style={{ right: 16, bottom: 'calc(env(safe-area-inset-bottom, 0px) + 150px)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {([
-            { action: 'skill1' as const, label: 'Z', ring: 'rgba(250,204,21,0.5)', glow: 'rgba(250,204,21,0.25)' },
-            { action: 'skill2' as const, label: 'X', ring: 'rgba(245,158,11,0.5)', glow: 'rgba(245,158,11,0.25)' },
-          ]).map(({ action, label, ring, glow }) => (
-            <button
-              key={action}
-              onPointerDown={(e) => handleButtonPointerDown(action, e)}
-              onPointerUp={(e) => handleButtonPointerUp(action, e)}
-              onPointerCancel={(e) => handleButtonPointerUp(action, e)}
-              className="w-14 h-14 rounded-full flex items-center justify-center text-white backdrop-blur-sm active:bg-white/20 touch-none select-none"
-              style={{ background: 'rgba(8,8,12,0.8)', border: `2px solid ${ring}`, boxShadow: `0 0 10px ${glow}` }}
-            >
-              <span className="text-base font-black pointer-events-none" style={{ color: ring }}>{label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {isMobile && weaponCategoryOf(hotbar.slots[hotbar.selectedSlot]) === 'dagger' && (
-        <div className="absolute pointer-events-auto z-30" style={{ right: 16, bottom: 'calc(env(safe-area-inset-bottom, 0px) + 150px)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {([
-            { action: 'skill1' as const, label: 'Z', ring: 'rgba(251,191,36,0.5)', glow: 'rgba(251,191,36,0.25)' },
-            { action: 'skill2' as const, label: 'X', ring: 'rgba(217,119,6,0.5)', glow: 'rgba(217,119,6,0.25)' },
-          ]).map(({ action, label, ring, glow }) => (
-            <button
-              key={action}
-              onPointerDown={(e) => handleButtonPointerDown(action, e)}
-              onPointerUp={(e) => handleButtonPointerUp(action, e)}
-              onPointerCancel={(e) => handleButtonPointerUp(action, e)}
-              className="w-14 h-14 rounded-full flex items-center justify-center text-white backdrop-blur-sm active:bg-white/20 touch-none select-none"
-              style={{ background: 'rgba(8,8,12,0.8)', border: `2px solid ${ring}`, boxShadow: `0 0 10px ${glow}` }}
-            >
-              <span className="text-base font-black pointer-events-none" style={{ color: ring }}>{label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {isMobile && weaponCategoryOf(hotbar.slots[hotbar.selectedSlot]) === 'gun' && (
-        <div className="absolute pointer-events-auto z-30" style={{ right: 16, bottom: 'calc(env(safe-area-inset-bottom, 0px) + 150px)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {([
-            { action: 'skill1' as const, label: 'Z', ring: 'rgba(248,113,113,0.5)', glow: 'rgba(248,113,113,0.25)' },
-            { action: 'skill2' as const, label: 'X', ring: 'rgba(251,146,60,0.5)', glow: 'rgba(251,146,60,0.25)' },
-          ]).map(({ action, label, ring, glow }) => (
-            <button
-              key={action}
-              onPointerDown={(e) => handleButtonPointerDown(action, e)}
-              onPointerUp={(e) => handleButtonPointerUp(action, e)}
-              onPointerCancel={(e) => handleButtonPointerUp(action, e)}
-              className="w-14 h-14 rounded-full flex items-center justify-center text-white backdrop-blur-sm active:bg-white/20 touch-none select-none"
-              style={{ background: 'rgba(8,8,12,0.8)', border: `2px solid ${ring}`, boxShadow: `0 0 10px ${glow}` }}
-            >
-              <span className="text-base font-black pointer-events-none" style={{ color: ring }}>{label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {isMobile && weaponCategoryOf(hotbar.slots[hotbar.selectedSlot]) === 'core' && (
-        <div className="absolute pointer-events-auto z-30" style={{ right: 16, bottom: 'calc(env(safe-area-inset-bottom, 0px) + 150px)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {([
-            { action: 'skill1' as const, label: 'Z', ring: 'rgba(167,139,250,0.5)', glow: 'rgba(167,139,250,0.25)' },
-            { action: 'skill2' as const, label: 'X', ring: 'rgba(139,92,246,0.5)', glow: 'rgba(139,92,246,0.25)' },
-            { action: 'skill3' as const, label: 'C', ring: 'rgba(124,58,237,0.5)', glow: 'rgba(124,58,237,0.25)' },
-            { action: 'skill4' as const, label: 'V', ring: 'rgba(192,132,252,0.5)', glow: 'rgba(192,132,252,0.25)' },
-            { action: 'skill5' as const, label: 'F', ring: 'rgba(216,180,254,0.5)', glow: 'rgba(216,180,254,0.25)' },
-          ]).map(({ action, label, ring, glow }) => (
-            <button
-              key={action}
-              onPointerDown={(e) => handleButtonPointerDown(action, e)}
-              onPointerUp={(e) => handleButtonPointerUp(action, e)}
-              onPointerCancel={(e) => handleButtonPointerUp(action, e)}
-              className="w-14 h-14 rounded-full flex items-center justify-center text-white backdrop-blur-sm active:bg-white/20 touch-none select-none"
-              style={{ background: 'rgba(8,8,12,0.8)', border: `2px solid ${ring}`, boxShadow: `0 0 10px ${glow}` }}
-            >
-              <span className="text-base font-black pointer-events-none" style={{ color: ring }}>{label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {isMobile && staffEquipped && (
-        <div className="absolute pointer-events-auto z-30" style={{ right: 16, bottom: 'calc(env(safe-area-inset-bottom, 0px) + 150px)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {([
-            { action: 'skill1' as const, label: 'Z', ring: 'rgba(56,189,248,0.5)', glow: 'rgba(56,189,248,0.25)' },
-            { action: 'skill2' as const, label: 'X', ring: 'rgba(34,211,238,0.5)', glow: 'rgba(34,211,238,0.25)' },
-            { action: 'skill3' as const, label: 'C', ring: 'rgba(103,232,249,0.5)', glow: 'rgba(103,232,249,0.25)' },
-          ]).map(({ action, label, ring, glow }) => (
-            <button
-              key={action}
-              onPointerDown={(e) => handleButtonPointerDown(action, e)}
-              onPointerUp={(e) => handleButtonPointerUp(action, e)}
-              onPointerCancel={(e) => handleButtonPointerUp(action, e)}
-              className="w-14 h-14 rounded-full flex items-center justify-center text-white backdrop-blur-sm active:bg-white/20 touch-none select-none"
-              style={{ background: 'rgba(8,8,12,0.8)', border: `2px solid ${ring}`, boxShadow: `0 0 10px ${glow}` }}
-            >
-              <span className="text-base font-black pointer-events-none" style={{ color: ring }}>{label}</span>
-            </button>
-          ))}
+      {/* Mobile weapon skill stack (M1W3D6 #1 WS3): the whole per-weapon button
+          column is ONE customizable HUD element (`mobileSkillButtons`), so it is
+          dragged, hidden, scaled and faded as a unit. The buttons derive from
+          the same authoritative hotbar source of truth the combat logic uses, so
+          weapon visuals, gameplay and UI always agree. The element's own box is
+          a fixed, bottom-aligned column, which keeps the stack's bottom edge
+          identical for 2-button (sword / dagger / gun) and 5-button (Core)
+          weapons — so one default position reproduces the old
+          `right: 16px; bottom: calc(safe-area-inset-bottom + 150px)` placement
+          for every weapon. */}
+      {isMobile && hudLayout.mobileSkillButtons.visible && (
+        <div
+          className="absolute z-30"
+          style={{
+            left: `${hudLayout.mobileSkillButtons.position.x * 100}%`,
+            top: `${hudLayout.mobileSkillButtons.position.y * 100}%`,
+            transform: `translate(-50%, -50%) scale(${hudLayout.mobileSkillButtons.size / 100})`,
+            transformOrigin: 'center center',
+            ...(hudLayout.mobileSkillButtons.box ? { width: `${hudLayout.mobileSkillButtons.box.w * 100}%`, height: `${hudLayout.mobileSkillButtons.box.h * 100}%` } : {}),
+            opacity: hudLayout.mobileSkillButtons.opacity / 100,
+            pointerEvents: 'none',
+          }}
+        >
+          <MobileSkillButtons onDown={handleButtonPointerDown} onUp={handleButtonPointerUp} />
         </div>
       )}
 
@@ -960,9 +984,25 @@ export default function UI() {
         </div>
       )}
 
-      {/* Desktop Hotbar */}
-      {!isMobile && (
-        <Hotbar />
+      {/* Desktop Hotbar — a customizable HUD element (M1W3D6 #1 WS3,
+          `desktopHotbar`). The wrapper owns position/scale/opacity; the hotbar
+          keeps its own look and its desktop-only gate. Default position
+          reproduces the previous `bottom-4 left-1/2` placement on a 16:9
+          viewport. */}
+      {!isMobile && hudLayout.desktopHotbar.visible && (
+        <div
+          className="absolute z-40"
+          style={{
+            left: `${hudLayout.desktopHotbar.position.x * 100}%`,
+            top: `${hudLayout.desktopHotbar.position.y * 100}%`,
+            transform: `translate(-50%, -50%) scale(${hudLayout.desktopHotbar.size / 100})`,
+            transformOrigin: 'center center',
+            ...(hudLayout.desktopHotbar.box ? { width: `${hudLayout.desktopHotbar.box.w * 100}%`, height: `${hudLayout.desktopHotbar.box.h * 100}%` } : {}),
+            opacity: hudLayout.desktopHotbar.opacity / 100,
+          }}
+        >
+          <Hotbar />
+        </div>
       )}
 
       {/* Chat / Command Console (single developer command entry point) */}
@@ -979,7 +1019,7 @@ export default function UI() {
 }
 
 // ── Hotbar Component ───────────────────────────────────────────────
-function Hotbar() {
+export function Hotbar({ preview = false }: { preview?: boolean } = {}) {
   const hotbar = useGameStore(s => s.hotbar);
   const setSelectedSlot = useGameStore(s => s.setSelectedHotbarSlot);
   const setHotbarSlot = useGameStore(s => s.setHotbarSlot);
@@ -1019,7 +1059,7 @@ function Hotbar() {
   const allItems = getAllItems();
 
   return (
-    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-2 py-2 bg-black/60 backdrop-blur-md rounded-lg border border-white/10 shadow-xl">
+    <div className="flex items-center gap-1.5 px-2 py-2 bg-black/60 backdrop-blur-md rounded-lg border border-white/10 shadow-xl">
       {/* Hotbar slots 1-7 — equal-sized parchment slots, gold selected ring */}
       {hotbar.slots.map((itemId, index) => (
         <div
@@ -1037,10 +1077,10 @@ function Hotbar() {
               ? undefined
               : 'inset 0 1px 0 rgba(232,213,174,0.1), 0 1px 2px rgba(0,0,0,0.5)',
           }}
-          onClick={() => handleSlotClick(index)}
-          onContextMenu={(e) => { e.preventDefault(); handleSlotRightClick(index); }}
-          draggable={!!itemId}
-          onDragStart={(e) => handleSlotDragStart(index, e)}
+          onClick={preview ? undefined : () => handleSlotClick(index)}
+          onContextMenu={preview ? undefined : (e) => { e.preventDefault(); handleSlotRightClick(index); }}
+          draggable={!preview && !!itemId}
+          onDragStart={preview ? undefined : (e) => handleSlotDragStart(index, e)}
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => handleSlotDrop(index, e)}
           title={itemId ? `${itemId} (Slot ${index + 1})` : `Empty Slot ${index + 1}`}
@@ -1068,7 +1108,7 @@ function Hotbar() {
       {/* Inventory button */}
       <div
         className="w-10 h-10 sm:w-12 sm:h-12 border-2 border-dashed border-white/30 rounded-md flex items-center justify-center cursor-pointer hover:border-white/50 hover:bg-white/5 transition-all"
-        onClick={() => setShowInventory(true)}
+        onClick={preview ? undefined : () => setShowInventory(true)}
         title="Open Inventory (I or Tab)"
       >
         <Backpack size={18} className="text-white/60" />
@@ -1080,7 +1120,7 @@ function Hotbar() {
       {hotbar.equippedShield && (
         <div
           className="w-10 h-10 sm:w-12 sm:h-12 border-2 border-blue-400 rounded-md flex items-center justify-center bg-blue-500/10 cursor-pointer hover:bg-blue-500/20 transition-all relative"
-          onClick={() => useGameStore.getState().setEquippedShield(null)}
+          onClick={preview ? undefined : () => useGameStore.getState().setEquippedShield(null)}
           title={`Equipped: ${getItem(hotbar.equippedShield)?.name || hotbar.equippedShield} (Click to unequip)`}
         >
           <Shield size={20} className="text-blue-400" />

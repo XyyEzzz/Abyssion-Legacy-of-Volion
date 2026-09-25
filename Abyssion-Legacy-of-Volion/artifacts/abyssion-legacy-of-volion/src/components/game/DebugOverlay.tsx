@@ -37,6 +37,87 @@ function fmtTs(v: unknown): string {
   return '—';
 }
 
+/* ── SECTION E — per-frame performance counters (F5) ─────────────────────
+ *  Frame timing must advance EVERY frame, but this overlay renders outside
+ *  GameScene's <Canvas>, so R3F's useFrame is not reachable from here; a
+ *  self-contained rAF loop drives it instead (see the mount effect below).
+ *  The panel's *text* still refreshes only on the existing 250 ms tick.
+ *  Module scope and mutated in place: one subtraction, one fixed-array write
+ *  and one counter per frame — no allocation per frame. */
+const FRAME_WINDOW = 60; // 1 s at 60 fps
+
+/** Chromium's non-standard heap stats. Absent everywhere else. */
+type PerfMemory = { usedJSHeapSize: number; totalJSHeapSize: number };
+
+const PERF = {
+  buf: new Array<number>(FRAME_WINDOW).fill(0), // rolling frame-time window
+  idx: 0,
+  frames: 0,
+  windowStart: 0,
+  lastAt: 0, // performance.now() of the previous frame; 0 = none yet
+  fps: 0,
+  currentMs: 0,
+  avgMs: 0,
+  heapOk: false,
+  heapUsedMB: 0,
+  heapTotalMB: 0,
+};
+
+/** Per-mount reset — the frame window is transient (no persistence). */
+function resetPerf() {
+  PERF.buf.fill(0);
+  PERF.idx = 0;
+  PERF.frames = 0;
+  PERF.windowStart = performance.now();
+  PERF.lastAt = 0;
+  PERF.fps = 0;
+  PERF.currentMs = 0;
+  PERF.avgMs = 0;
+}
+
+/** One frame of the rAF loop. Scalars only — nothing is allocated. */
+function tickFrame() {
+  const now = performance.now();
+  if (PERF.lastAt === 0) {
+    // The first frame after mount has no previous sample. A dt measured from
+    // performance.now()'s origin (page load) would poison the window and the
+    // rolling average, so seed lastAt and count the frame.
+    PERF.lastAt = now;
+    PERF.frames += 1;
+    return;
+  }
+  const dt = now - PERF.lastAt;
+  PERF.lastAt = now;
+  PERF.currentMs = dt;
+  PERF.buf[PERF.idx] = dt;
+  PERF.idx = (PERF.idx + 1) % FRAME_WINDOW;
+  if (now - PERF.windowStart >= 1000) {
+    PERF.fps = PERF.frames;
+    PERF.frames = 0;
+    PERF.windowStart = now;
+    let sum = 0;
+    for (let i = 0; i < FRAME_WINDOW; i++) sum += PERF.buf[i];
+    PERF.avgMs = sum / FRAME_WINDOW;
+  }
+  PERF.frames += 1;
+}
+
+/** Heap read — Chromium only. Feature-detected; never polyfilled, never throws. */
+function tickHeap() {
+  if (!('memory' in performance)) {
+    PERF.heapOk = false;
+    return;
+  }
+  const mem = (performance as Performance & { memory?: PerfMemory }).memory;
+  if (!mem) {
+    PERF.heapOk = false;
+    return;
+  }
+  PERF.heapOk = true;
+  PERF.heapUsedMB = mem.usedJSHeapSize / 1048576;
+  PERF.heapTotalMB = mem.totalJSHeapSize / 1048576;
+}
+
 function buildLines(s: StoreState): string[] {
   const out: string[] = [];
   const row = (key: string, value: unknown, ts = false) =>
@@ -100,6 +181,17 @@ function buildLines(s: StoreState): string[] {
   row('equipped weapon (selectedWeapon)', s.hotbar.slots[s.hotbar.selectedSlot]);
   row('RESONANCE_SKILLS ids', RESONANCE_SKILLS.map((sk) => sk.id));
 
+  // ── SECTION E — PERFORMANCE (F5) ──────────────────────────────────
+  // FPS and frame time come from the per-frame rAF counters; the heap is
+  // sampled on the existing 250 ms tick. Reading both here means the panel
+  // text and the Copy/Save JSON always agree.
+  out.push('SECTION E — PERFORMANCE');
+  row('fps', Math.round(PERF.fps));
+  row('currentFrameMs', Number(PERF.currentMs.toFixed(2)));
+  row('avgFrameMs', Number(PERF.avgMs.toFixed(2)));
+  row('heapUsedMB', PERF.heapOk ? Number(PERF.heapUsedMB.toFixed(1)) : 'n/a');
+  row('heapTotalMB', PERF.heapOk ? Number(PERF.heapTotalMB.toFixed(1)) : 'n/a');
+
   return out;
 }
 
@@ -122,18 +214,38 @@ function fallbackCopy(text: string) {
 
 export default function DebugOverlay() {
   const [lines, setLines] = useState<string[]>([]);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'copy' | 'save' | null>(null);
 
   useEffect(() => {
-    const tick = () => setLines(buildLines(useGameStore.getState()));
+    const tick = () => {
+      // The heap is sampled here — on the existing 250 ms tick, not per frame.
+      tickHeap();
+      setLines(buildLines(useGameStore.getState()));
+    };
     tick();
     const id = setInterval(tick, 250);
     return () => clearInterval(id);
   }, []);
 
+  // Section E: frame timing advances every frame. The overlay is a DOM sibling
+  // of GameScene's <Canvas>, so R3F's useFrame is not reachable from here — a
+  // self-contained rAF loop is the option that works. One closure per mount,
+  // nothing allocated per frame, window reset on mount, cancelled on unmount.
+  useEffect(() => {
+    resetPerf();
+    let raf = requestAnimationFrame(function step() {
+      tickFrame();
+      raf = requestAnimationFrame(step);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   // Snapshot the same fields the panel displays, as JSON, so the user can
   // paste them into chat. Read-only — touches no store field.
-  const handleCopy = async () => {
+  // Same handler, same JSON payload, for both buttons: F5's Save is an alias
+  // for Copy (clipboard write, not a file download) so the existing snapshot
+  // workflow is untouched. Only the transient confirmation label differs.
+  const handleCopy = async (label: 'copy' | 'save') => {
     const payload = {
       capturedAt: new Date().toISOString(),
       lines: buildLines(useGameStore.getState()),
@@ -145,8 +257,8 @@ export default function DebugOverlay() {
       } else {
         fallbackCopy(text);
       }
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      setCopied(label);
+      setTimeout(() => setCopied(null), 1500);
     } catch {
       fallbackCopy(text);
     }
@@ -159,13 +271,22 @@ export default function DebugOverlay() {
     >
       <div className="flex items-center justify-between gap-3">
         <span className="text-green-400 font-bold">DEBUG OVERLAY (F9)</span>
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="pointer-events-auto px-2 py-0.5 rounded border border-green-700 text-green-200 hover:bg-green-900/40"
-        >
-          {copied ? 'Copied' : 'Copy'}
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => handleCopy('copy')}
+            className="pointer-events-auto px-2 py-0.5 rounded border border-green-700 text-green-200 hover:bg-green-900/40"
+          >
+            {copied === 'copy' ? 'Copied' : 'Copy'}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleCopy('save')}
+            className="pointer-events-auto px-2 py-0.5 rounded border border-green-700 text-green-200 hover:bg-green-900/40"
+          >
+            {copied === 'save' ? 'Saved' : 'Save'}
+          </button>
+        </div>
       </div>
       {lines.map((line, i) =>
         line === '—' ? (

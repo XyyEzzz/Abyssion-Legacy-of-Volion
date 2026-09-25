@@ -174,7 +174,9 @@ export type HudElementId =
   | 'settingsBtn'
   | 'minimap'
   | 'topCenterControls'
-  | 'skillBar';
+  | 'skillBar'
+  | 'mobileSkillButtons'
+  | 'desktopHotbar';
 
 /** Normalized position: x and y are fractions of viewport size (0–1). */
 export interface HudPosition {
@@ -221,6 +223,19 @@ export const DEFAULT_HUD_LAYOUT: HudLayout = {
   // Skill bar: bottom-centre. y 0.80 reproduces the previous bottom-anchored
   // `clamp(72px, 15dvh + 32px, 280px)` row, expressed as a viewport fraction.
   skillBar:        { visible: true, position: { x: 0.5,  y: 0.80 }, size: 100, opacity: 100 },
+  // Mobile weapon skill stack: the whole per-weapon button column is ONE
+  // element. Defaults reproduce the previous hardcoded
+  // `right: 16px; bottom: calc(safe-area-inset-bottom + 150px)` placement on a
+  // 16:9 viewport (1280x720). The element's own box is a fixed 56x320 column
+  // with its buttons bottom-aligned, so the box centre is
+  //   x = 1280 - 16 - 28 = 1236 -> 0.966
+  //   y = 720 - 150 - 160 = 410 -> 0.569
+  // Bottom-aligning inside a fixed-height box keeps the stack's bottom edge at
+  // the same place for every weapon (2-button and 5-button stacks alike).
+  mobileSkillButtons: { visible: true, position: { x: 0.966, y: 0.569 }, size: 100, opacity: 100 },
+  // Desktop hotbar: reproduces `bottom-4 left-1/2` on a 16:9 viewport — centred
+  // horizontally, row box 66px tall, so y = 720 - 16 - 33 = 671 -> 0.932.
+  desktopHotbar:   { visible: true, position: { x: 0.5,  y: 0.932 }, size: 100, opacity: 100 },
   interactPrompt:  { visible: true, position: { x: 0.5,  y: 0.85 }, size: 100, opacity: 100 },
   bossBar:         { visible: true, position: { x: 0.5,  y: 0.88 }, size: 100, opacity: 100 },
   deathOverlay:    { visible: true, position: { x: 0.5,  y: 0.5  }, size: 100, opacity: 100 },
@@ -247,6 +262,8 @@ export const HUD_ELEMENT_LABELS: Record<HudElementId, string> = {
   interactPrompt: 'Interact Prompt',
   topCenterControls: 'Top Controls',
   skillBar: 'Skill Bar',
+  mobileSkillButtons: 'Mobile Skills',
+  desktopHotbar: 'Desktop Hotbar',
   bossBar: 'Boss Bar',
   deathOverlay: 'Death Overlay',
   questTracker: 'Quest Tracker',
@@ -270,6 +287,8 @@ export const DRAGGABLE_HUD_ELEMENTS: HudElementId[] = [
   'backpackBtn', 'settingsBtn', 'minimap',
   'topCenterControls',
   'skillBar',
+  'mobileSkillButtons',
+  'desktopHotbar',
 ];
 
 /**
